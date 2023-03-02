@@ -75,6 +75,13 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		ServiceRequest serviceRequest = new ServiceRequest();
 		
 		serviceRequest.setId(order.getUuid());
+
+		//Add additional identifier fields as required
+        
+		//Include facility code
+		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
+		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
+		
 		
 		serviceRequest.setStatus(determineServiceRequestStatus(order));
 		
