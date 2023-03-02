@@ -14,6 +14,7 @@ import static org.openmrs.module.fhir2.api.translators.impl.FhirTranslatorUtils.
 
 import javax.annotation.Nonnull;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -116,11 +117,34 @@ public class PatientTranslatorImpl implements PatientTranslator {
 		return patient;
 	}
 	
+	/* 
 	public List<ContactPoint> getPatientContactDetails(@Nonnull org.openmrs.Patient patient) {
 		return fhirPersonDao
 		        .getActiveAttributesByPersonAndAttributeTypeUuid(patient,
 		            globalPropertyService.getGlobalProperty(FhirConstants.PERSON_CONTACT_POINT_ATTRIBUTE_TYPE))
 		        .stream().map(telecomTranslator::toFhirResource).collect(Collectors.toList());
+	}
+	*/
+
+	public List<ContactPoint> getPatientContactDetails(@Nonnull org.openmrs.Patient patient) {
+		
+		List<ContactPoint> primaryContacts = fhirPersonDao
+		        .getActiveAttributesByPersonAndAttributeTypeUuid(patient,
+		            globalPropertyService.getGlobalProperty(FhirConstants.PERSON_CONTACT_POINT_ATTRIBUTE_TYPE))
+		        .stream().map(telecomTranslator::toFhirResource).collect(Collectors.toList());
+		List<ContactPoint> otherContacts = fhirPersonDao
+		        .getActiveAttributesByPersonAndAttributeTypeUuid(patient,
+		            globalPropertyService.getGlobalProperty("otherContactPersonAttributeUUID"))
+		        .stream().map(telecomTranslator::toFhirResource).collect(Collectors.toList());
+		List<ContactPoint> saContacts = fhirPersonDao
+		        .getActiveAttributesByPersonAndAttributeTypeUuid(patient,
+		            globalPropertyService.getGlobalProperty("saNumberAttributeUUID"))
+		        .stream().map(telecomTranslator::toFhirResource).collect(Collectors.toList());
+		List<ContactPoint> allContacts = new ArrayList<ContactPoint>();
+		allContacts.addAll(primaryContacts);
+		allContacts.addAll(otherContacts);
+		allContacts.addAll(saContacts);
+		return allContacts;
 	}
 	
 	@Override
