@@ -82,6 +82,10 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
 		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
 		
+		// Include facility name
+		serviceRequest.addIdentifier().setSystem("Facility_name")
+		        .setValue(order.getEncounter().getLocation().getParentLocation().toString());
+				
 		
 		serviceRequest.setStatus(determineServiceRequestStatus(order));
 		
