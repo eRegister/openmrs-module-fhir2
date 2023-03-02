@@ -79,16 +79,16 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 
 		//Add additional identifier fields as required
 
-
+        // Include facility name
+		serviceRequest.addIdentifier().setSystem("Facility_name")
+		.setValue(order.getEncounter().getLocation().getParentLocation().toString());
         
 		//Include facility code
 		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
 		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
 		
-		// Include facility name
-		serviceRequest.addIdentifier().setSystem("Facility_name")
-		        .setValue(order.getEncounter().getLocation().getParentLocation().toString());
-				
+		//Include the order number to the ServiceRequest
+		serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());		
 		
 		serviceRequest.setStatus(determineServiceRequestStatus(order));
 		
