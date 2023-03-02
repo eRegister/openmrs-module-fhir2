@@ -16,6 +16,7 @@ import javax.annotation.Nonnull;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Random;
 import java.util.stream.Collectors;
 
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
@@ -77,6 +78,8 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		serviceRequest.setId(order.getUuid());
 
 		//Add additional identifier fields as required
+
+
         
 		//Include facility code
 		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
@@ -157,5 +160,28 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		}
 		
 		return serviceRequestTasks.iterator().next().getOwner();
+	}
+
+	private String LabOrderNumberGenerator() {
+		String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		Random random = new Random();
+		StringBuilder builder = new StringBuilder();
+		
+		//builder.append("LAB");
+		/*for (int i = 0; i < 7; i++) {
+		    builder.append(alphabet.charAt(random.nextInt(26)));
+		}*/
+		for (int i = 0; i < 4; i++) {
+		    builder.append(alphabet.charAt(random.nextInt(26)));
+		}
+		for (int i = 0; i < 6; i++) {
+			builder.append(random.nextInt(10));
+		}
+		
+		String labOrderNumber = builder.toString();
+		System.out.println(labOrderNumber);
+		
+		return labOrderNumber;
+		
 	}
 }
