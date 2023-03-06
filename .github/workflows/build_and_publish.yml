@@ -33,10 +33,11 @@ jobs:
       run: |
         pwd
         ls omod/target
+        git status
     - name: push dhis-integration to other branch
       run: |
         cd target/omod
-        cp target/omod/fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
+        cp fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
         ls -al
         git config --global user.email "la.mphatsi@gmail.com"
         git config --global user.name "lmphatsi"
