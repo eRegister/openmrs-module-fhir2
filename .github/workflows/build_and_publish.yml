@@ -1,0 +1,49 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Java CI with Maven
+
+on:
+  push:
+    branches: [ "eregister-fhir2-main-branch" ]
+  pull_request:
+    branches: [ "eregister-fhir2-main-branch" ]
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up JDK 1.8
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+    - name: Build with Maven
+      run: mvn clean install -DskipTests=true
+      
+    - name: where am I ... list omod dir
+      run: |
+        pwd
+        ls omod/target
+    - name: push dhis-integration to other branch
+      run: |
+        cd target/omod
+        cp target/omod/fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
+        ls -al
+        git config --global user.email "la.mphatsi@gmail.com"
+        git config --global user.name "lmphatsi"
+        git config --global init.defaultBranch "main"
+        git init
+        git branch -m main
+        git add .
+        git commit -m "release openmrs-fhir2-module omod "date
+        git remote add github https://${{ secrets.FHIR2_OMOD_REPO_TOKEN }}@github.com/lmphatsi/openmrs-fhir2-module-omod.git
+        git push -f github main
