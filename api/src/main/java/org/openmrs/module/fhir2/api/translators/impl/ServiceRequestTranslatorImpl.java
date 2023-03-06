@@ -16,7 +16,9 @@ import javax.annotation.Nonnull;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
@@ -25,14 +27,22 @@ import ca.uhn.fhir.rest.param.ReferenceOrListParam;
 import ca.uhn.fhir.rest.param.ReferenceParam;
 import lombok.AccessLevel;
 import lombok.Setter;
+import org.hl7.fhir.r4.model.CodeableConcept;
+import org.hl7.fhir.r4.model.Coding;
+import org.hl7.fhir.r4.model.DateTimeType;
+import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Period;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
+import org.hl7.fhir.r4.model.Specimen;
 import org.hl7.fhir.r4.model.Task;
+import org.openmrs.Concept;
 import org.openmrs.Encounter;
 import org.openmrs.Order;
 import org.openmrs.Provider;
 import org.openmrs.TestOrder;
+import org.openmrs.api.ConceptService;
+import org.openmrs.api.context.Context;
 import org.openmrs.module.fhir2.api.FhirTaskService;
 import org.openmrs.module.fhir2.api.translators.ConceptTranslator;
 import org.openmrs.module.fhir2.api.translators.EncounterReferenceTranslator;
@@ -76,19 +86,24 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		ServiceRequest serviceRequest = new ServiceRequest();
 		
 		serviceRequest.setId(order.getUuid());
-
+		
 		//Add additional identifier fields as required
-
-        // Include facility name
+		
+		// Include facility name
 		serviceRequest.addIdentifier().setSystem("Facility_name")
-		.setValue(order.getEncounter().getLocation().getParentLocation().toString());
-        
+		        .setValue(order.getEncounter().getLocation().getParentLocation().toString());
+		
 		//Include facility code
 		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
 		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
 		
 		//Include the order number to the ServiceRequest
-		serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());		
+		serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());
+		
+		// Create a new Specimen resource and add it to the ServiceRequest as a contained resource
+		Specimen labSpecimen = getSpecimen(order);
+		serviceRequest.addContained(labSpecimen);
+		serviceRequest.addSpecimen().setReference("#" + labSpecimen.getId());
 		
 		serviceRequest.setStatus(determineServiceRequestStatus(order));
 		
@@ -161,7 +176,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		return serviceRequestTasks.iterator().next().getOwner();
 	}
-
+	
 	private String LabOrderNumberGenerator() {
 		String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		Random random = new Random();
@@ -172,7 +187,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		    builder.append(alphabet.charAt(random.nextInt(26)));
 		}*/
 		for (int i = 0; i < 4; i++) {
-		    builder.append(alphabet.charAt(random.nextInt(26)));
+			builder.append(alphabet.charAt(random.nextInt(26)));
 		}
 		for (int i = 0; i < 6; i++) {
 			builder.append(random.nextInt(10));
@@ -182,6 +197,32 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		System.out.println(labOrderNumber);
 		
 		return labOrderNumber;
-		
 	}
+	
+	private String getSpecimenType(Concept orderConcept) {
+		
+		ConceptService conceptService = Context.getConceptService();
+		Concept labSamplesConcept = conceptService.getConceptByName("Lab Samples");
+		List<Concept> labSamplesSet = labSamplesConcept.getSetMembers();
+		
+		for (Concept concept : labSamplesSet) {
+			if (concept.getSetMembers().contains(orderConcept)) {
+				return concept.getDisplayString();
+			}
+		}
+		return "Cannot determine specimen type";
+	}
+	
+	private Specimen getSpecimen(TestOrder order) {
+		Specimen labSpecimen = new Specimen();
+		labSpecimen.setId(new IdType("Specimen", UUID.randomUUID().toString()));
+		String labSampleType = getSpecimenType(order.getConcept());
+		labSpecimen.setType(new CodeableConcept()
+		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
+		labSpecimen.setCollection(
+		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
+		
+		return labSpecimen;
+	}
+	
 }
