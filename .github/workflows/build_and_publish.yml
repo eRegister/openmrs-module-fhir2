@@ -22,14 +22,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up JDK 1.8 and Maven 3.6.3
+    - name: Set up JDK 1.8
       uses: actions/setup-java@v2
       with:
         java-version: 1.8
-        maven-version: '3.6.3'
     - name: Build with Maven
-      run: mvn --version
-      #run: mvn clean package -DskipTests=true
+      run: |
+        mvn --version
+        rm -rf /home/runner/.m2
+        mvn clean package -DskipTests=true
       
     - name: where am I ... list omod dir
       run: |
