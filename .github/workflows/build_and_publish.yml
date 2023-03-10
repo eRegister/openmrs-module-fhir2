@@ -14,8 +14,8 @@ on:
   pull_request:
     branches: [ "eregister-fhir2-main-branch" ]
 
-
-build:
+jobs:
+  build:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -26,23 +26,3 @@ build:
         java-version: '1.8'
     - name: Build OpenMRS FHIR2 module
       run: mvn clean package -DskipTests=true
-
-    - name: where am I ... list omod dir
-      run: |
-        pwd
-        ls omod/target
-        git status
-    - name: push dhis-integration to other branch
-      run: |
-        cd target/omod
-        cp fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
-        ls -al
-        git config --global user.email "la.mphatsi@gmail.com"
-        git config --global user.name "lmphatsi"
-        git config --global init.defaultBranch "main"
-        git init
-        git branch -m main
-        git add .
-        git commit -m "release openmrs-fhir2-module omod "date
-        git remote add github https://${{ secrets.FHIR2_OMOD_REPO_TOKEN }}@github.com/lmphatsi/openmrs-fhir2-module-omod.git
-        git push -f github main
