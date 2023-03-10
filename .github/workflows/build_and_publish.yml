@@ -30,7 +30,7 @@ jobs:
         mvn clean package -DskipTests=true
     - name: Publish OpenMRS FHIR2 module omod to omod repo
       run: |
-        cd target/omod
+        cd omod/target
         cp fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
         ls -al
         git config --global user.email "la.mphatsi@gmail.com"
