@@ -28,7 +28,8 @@ jobs:
         java-version: 1.8
         maven-version: 3.6.3
     - name: Build with Maven
-      run: mvn clean package -DskipTests=true
+      run: mvn --version
+      #run: mvn clean package -DskipTests=true
       
     - name: where am I ... list omod dir
       run: |
