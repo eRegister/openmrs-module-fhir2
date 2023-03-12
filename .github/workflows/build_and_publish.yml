@@ -31,7 +31,9 @@ jobs:
     - name: Publish OpenMRS FHIR2 module omod to omod repo
       run: |
         cd omod/target
-        cp fhir2-1.8.0.omod fhir2-1.8.0$(date +_%d%m%Y).omod
+        mkdir to_publish
+        cp fhir2-1.8.0.omod to_publish/fhir2-1.8.0$(date +_%d%m%Y).omod
+        cd to_publish
         ls -al
         git config --global user.email "la.mphatsi@gmail.com"
         git config --global user.name "lmphatsi"
