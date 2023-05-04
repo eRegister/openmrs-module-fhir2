@@ -125,7 +125,7 @@ public class PatientTranslatorImpl implements PatientTranslator {
 		        .stream().map(telecomTranslator::toFhirResource).collect(Collectors.toList());
 	}
 	*/
-
+	
 	public List<ContactPoint> getPatientContactDetails(@Nonnull org.openmrs.Patient patient) {
 		
 		List<ContactPoint> primaryContacts = fhirPersonDao
