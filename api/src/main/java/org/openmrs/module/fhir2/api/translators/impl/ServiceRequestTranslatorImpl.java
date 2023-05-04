@@ -15,8 +15,11 @@ import javax.annotation.Nonnull;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,6 +34,7 @@ import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DateTimeType;
 import org.hl7.fhir.r4.model.IdType;
+import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Period;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
@@ -38,14 +42,16 @@ import org.hl7.fhir.r4.model.Specimen;
 import org.hl7.fhir.r4.model.Task;
 import org.openmrs.Concept;
 import org.openmrs.Encounter;
+import org.openmrs.Obs;
 import org.openmrs.Order;
 import org.openmrs.Provider;
 import org.openmrs.TestOrder;
 import org.openmrs.api.ConceptService;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.ObsService;
 import org.openmrs.module.fhir2.api.FhirTaskService;
 import org.openmrs.module.fhir2.api.translators.ConceptTranslator;
 import org.openmrs.module.fhir2.api.translators.EncounterReferenceTranslator;
+import org.openmrs.module.fhir2.api.translators.ObservationReferenceTranslator;
 import org.openmrs.module.fhir2.api.translators.OrderIdentifierTranslator;
 import org.openmrs.module.fhir2.api.translators.PatientReferenceTranslator;
 import org.openmrs.module.fhir2.api.translators.PractitionerReferenceTranslator;
@@ -79,6 +85,15 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	@Autowired
 	private OrderIdentifierTranslator orderIdentifierTranslator;
 	
+	@Autowired
+	private ObservationReferenceTranslator observationReferenceTranslator;
+	
+	@Autowired
+	private ConceptService conceptService;
+	
+	@Autowired
+	private ObsService obsService;
+	
 	@Override
 	public ServiceRequest toFhirResource(@Nonnull TestOrder order) {
 		notNull(order, "The TestOrder object should not be null");
@@ -89,6 +104,9 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		//Add additional identifier fields as required
 		
+		//Include order id -- required by OpenELIS
+		serviceRequest.addIdentifier().setSystem("ServiceReq_id").setValue(order.getUuid());
+		
 		// Include facility name
 		serviceRequest.addIdentifier().setSystem("Facility_name")
 		        .setValue(order.getEncounter().getLocation().getParentLocation().toString());
@@ -98,12 +116,26 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
 		
 		//Include the order number to the ServiceRequest
-		serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());
+		//serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());
 		
 		// Create a new Specimen resource and add it to the ServiceRequest as a contained resource
 		Specimen labSpecimen = getSpecimen(order);
 		serviceRequest.addContained(labSpecimen);
-		serviceRequest.addSpecimen().setReference("#" + labSpecimen.getId());
+		//serviceRequest.addSpecimen().setReference("#" + labSpecimen.getId());
+		
+		//Get a list of ARV Regimen, Preg status, Breastfeeding status & ART start date (of current regimen) Obs and link it in supporting info
+		Map<String, Obs> supportingInfo = getSupportingInfo(order.getPatient());
+		//Map - value contains Obs and key contains a string refering to info in the Obs
+		for (Map.Entry<String, Obs> entry : supportingInfo.entrySet()) {
+			String obsDescription = entry.getKey();
+			Obs obsItem = entry.getValue();
+			serviceRequest
+			        .addSupportingInfo(observationReferenceTranslator.toFhirResource(obsItem).setDisplay(obsDescription));
+		}
+		
+		//Add requisition id
+		//serviceRequest.setRequisition(
+		//    new Identifier().setSystem("Requisition_id").setValue(determineCommonRequisitionId(order.getUuid())));
 		
 		serviceRequest.setStatus(determineServiceRequestStatus(order));
 		
@@ -176,6 +208,28 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		return serviceRequestTasks.iterator().next().getOwner();
 	}
+	/* 
+	private String determineCommonRequisitionId(String orderUuid) {
+		IBundleProvider results = taskService.searchForTasks(
+		    new ReferenceAndListParam()
+		            .addAnd(new ReferenceOrListParam().add(new ReferenceParam("ServiceRequest", null, orderUuid))),
+		    null, null, null, null, null, null);
+		
+		Collection<Task> serviceRequestTasks = results.getResources(START_INDEX, END_INDEX).stream().map(p -> (Task) p)
+		        .collect(Collectors.toList());
+		
+		if (serviceRequestTasks.size() != 1) { //should be a single task
+			return "";
+		}
+		
+		for (Identifier identifier : serviceRequestTasks.iterator().next().getIdentifier()) {
+			if (identifier.getSystem() == "eRegister Lab Order Number") {
+				return identifier.getValue();
+			}
+		}
+		return "";
+	}
+	*/
 	
 	private String LabOrderNumberGenerator() {
 		String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -201,7 +255,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	
 	private String getSpecimenType(Concept orderConcept) {
 		
-		ConceptService conceptService = Context.getConceptService();
+		//ConceptService conceptService = Context.getConceptService();
 		Concept labSamplesConcept = conceptService.getConceptByName("Lab Samples");
 		List<Concept> labSamplesSet = labSamplesConcept.getSetMembers();
 		
@@ -213,6 +267,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		return "Cannot determine specimen type";
 	}
 	
+	//construct specimen
 	private Specimen getSpecimen(TestOrder order) {
 		Specimen labSpecimen = new Specimen();
 		labSpecimen.setId(new IdType("Specimen", UUID.randomUUID().toString()));
@@ -223,6 +278,91 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
 		
 		return labSpecimen;
+	}
+	
+	//get ARV Regimen, Pregnancy, Breastfeeding, etc. Obs for patient whose order is being placed
+	private Map<String, Obs> getSupportingInfo(org.openmrs.Patient pat) {
+		String ARTRegimenConceptName = "HIVTC, ART Regimen";
+		String ARTStartConceptName = "HIVTC, ART start date";
+		String pregStatusConceptName = "HIVTC, VL Pregnancy Status";
+		String breastfeedingStatusConceptName = "HIVTC, VL Breastfeeding Status";
+		String startOnCurrRegimen = "Start date for Current ART Regimen";
+		//get Obs for these concepts made for this patient (parameter)
+		
+		Concept ARTRegimenConcept = conceptService.getConceptByName(ARTRegimenConceptName);
+		Concept ARTStartConcept = conceptService.getConceptByName(ARTStartConceptName);
+		Concept pregConcept = conceptService.getConceptByName(pregStatusConceptName);
+		Concept breastfeedingConcept = conceptService.getConceptByName(breastfeedingStatusConceptName);
+		
+		List<Obs> allArvRegimensObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
+		List<Obs> allArtStartObs = obsService.getObservationsByPersonAndConcept(pat, ARTStartConcept);
+		List<Obs> allPregObs = obsService.getObservationsByPersonAndConcept(pat, pregConcept);
+		List<Obs> allBreastfeedingObs = obsService.getObservationsByPersonAndConcept(pat, breastfeedingConcept);
+		
+		Concept currentARTRegimenConcept = getLastObservation(allArvRegimensObs).getValueCoded();
+		
+		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
+		
+		//interested in only the latest observations - ART Regimen, Pregnancy status & Breastfeeding status	
+		supportingInfoObsMap.put(ARTRegimenConceptName, getLastObservation(allArvRegimensObs));
+		supportingInfoObsMap.put(startOnCurrRegimen, getFirstObsForCurrRegimen(allArvRegimensObs, currentARTRegimenConcept));
+		supportingInfoObsMap.put(pregStatusConceptName, getLastObservation(allPregObs));
+		supportingInfoObsMap.put(breastfeedingStatusConceptName, getLastObservation(allBreastfeedingObs));
+		//interested in only the oldest/fisrt observation - ART start date
+		supportingInfoObsMap.put(ARTStartConceptName, getFirstObservation(allArtStartObs));
+		
+		return supportingInfoObsMap;
+	}
+	
+	//This is essential a linear search ... needs better perfomance optimization
+	private Obs getFirstObsForCurrRegimen(List<Obs> ARTRegimenObs, Concept currRegimen) {
+		Obs emptyObs = new Obs();
+		emptyObs.setUuid(null);
+		
+		for (Obs obs : ARTRegimenObs) {
+			if (obs.getValueCoded().equals(currRegimen)) {
+				return obs;
+			}
+		}
+		return emptyObs;
+	}
+	
+	private Obs getLastObservation(List<Obs> observations) {
+		if (observations.size() == 0) {
+			Obs emptyObs = new Obs();
+			emptyObs.setUuid(null);
+			return emptyObs;
+		} else {
+			// Sort the list by date created
+			Collections.sort(observations, new Comparator<Obs>() {
+				
+				@Override
+				public int compare(Obs obs1, Obs obs2) {
+					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
+					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+				}
+			});
+			return observations.get(observations.size() - 1);
+		}
+	}
+	
+	private Obs getFirstObservation(List<Obs> observations) {
+		if (observations.size() == 0) {
+			Obs emptyObs = new Obs();
+			emptyObs.setUuid(null);
+			return emptyObs;
+		} else {
+			// Sort the list by date created
+			Collections.sort(observations, new Comparator<Obs>() {
+				
+				@Override
+				public int compare(Obs obs1, Obs obs2) {
+					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
+					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+				}
+			});
+			return observations.get(0);
+		}
 	}
 	
 }
