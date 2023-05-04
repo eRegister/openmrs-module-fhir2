@@ -13,7 +13,8 @@ import static org.apache.commons.lang3.Validate.notNull;
 
 import javax.annotation.Nonnull;
 
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Random;
 import java.util.stream.Collectors;
 
 import lombok.AccessLevel;
@@ -124,8 +125,17 @@ public class TaskTranslatorImpl implements TaskTranslator {
 			fhirTask.setLastModified(openmrsTask.getDateCreated());
 		}
 		
-		fhirTask.setIdentifier(Collections.singletonList(
-		    new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER).setValue(openmrsTask.getUuid())));
+		/* Below is the original Task ideintifier (immutable singleton) -- commented out
+		   Modified the code a bit to accomodate an additional identifier
+		   to be used to link multiple serviceRequests
+		*/
+		// fhirTask.setIdentifier(Collections.singletonList(new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER).setValue(openmrsTask.getUuid())));
+		
+		Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
+		        .setValue(openmrsTask.getUuid());
+		Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
+		        .setValue(LabOrderNumberGenerator());
+		fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
 		
 		fhirTask.getMeta().setLastUpdated(openmrsTask.getDateChanged());
 	}
@@ -220,5 +230,27 @@ public class TaskTranslatorImpl implements TaskTranslator {
 		CodeableConcept type = conceptTranslator.toFhirResource(openmrsInput.getType());
 		
 		return new Task.ParameterComponent().setType(type).setValue(new StringType().setValue(openmrsInput.getValueText()));
+	}
+	
+	private String LabOrderNumberGenerator() {
+		String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		Random random = new Random();
+		StringBuilder builder = new StringBuilder();
+		
+		//builder.append("LAB");
+		/*for (int i = 0; i < 7; i++) {
+		    builder.append(alphabet.charAt(random.nextInt(26)));
+		}*/
+		for (int i = 0; i < 4; i++) {
+			builder.append(alphabet.charAt(random.nextInt(26)));
+		}
+		for (int i = 0; i < 6; i++) {
+			builder.append(random.nextInt(10));
+		}
+		
+		String labOrderNumber = builder.toString();
+		System.out.println(labOrderNumber);
+		
+		return labOrderNumber;
 	}
 }
