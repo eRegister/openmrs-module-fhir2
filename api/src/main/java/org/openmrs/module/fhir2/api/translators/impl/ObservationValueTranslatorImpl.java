@@ -97,7 +97,17 @@ public class ObservationValueTranslatorImpl implements ObservationValueTranslato
 		} else if (resource instanceof IntegerType) {
 			obs.setValueNumeric(Double.valueOf(((IntegerType) resource).getValue()));
 		} else if (resource instanceof Quantity) {
-			obs.setValueNumeric(((Quantity) resource).getValue().doubleValue());
+			//handle case of structured numeric (Quantity with a comparator e.g. <20)
+			//by adding this additional info as a comment
+			if (((Quantity) resource).hasComparator()) {
+				String symbol = ((Quantity) resource).getComparator().toCode();
+				Double value = ((Quantity) resource).getValue().doubleValue();
+				String result = symbol + " " + value + " " + ((Quantity) resource).getUnit();
+				obs.setComment(result);
+				obs.setValueNumeric(((Quantity) resource).getValue().doubleValue());
+			} else {
+				obs.setValueNumeric(((Quantity) resource).getValue().doubleValue());
+			}
 		} else if (resource instanceof BooleanType) {
 			obs.setValueBoolean(((BooleanType) resource).getValue());
 		} else if (resource instanceof StringType) {
