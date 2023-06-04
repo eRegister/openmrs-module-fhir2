@@ -287,17 +287,21 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String pregStatusConceptName = "HIVTC, VL Pregnancy Status";
 		String breastfeedingStatusConceptName = "HIVTC, VL Breastfeeding Status";
 		String startOnCurrRegimen = "Start date for Current ART Regimen";
+		String cd4ConceptName = "HIVTC, CD4";
+		
 		//get Obs for these concepts made for this patient (parameter)
 		
 		Concept ARTRegimenConcept = conceptService.getConceptByName(ARTRegimenConceptName);
 		Concept ARTStartConcept = conceptService.getConceptByName(ARTStartConceptName);
 		Concept pregConcept = conceptService.getConceptByName(pregStatusConceptName);
 		Concept breastfeedingConcept = conceptService.getConceptByName(breastfeedingStatusConceptName);
+		Concept cd4Concept = conceptService.getConceptByName(cd4ConceptName);
 		
 		List<Obs> allArvRegimensObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
 		List<Obs> allArtStartObs = obsService.getObservationsByPersonAndConcept(pat, ARTStartConcept);
 		List<Obs> allPregObs = obsService.getObservationsByPersonAndConcept(pat, pregConcept);
 		List<Obs> allBreastfeedingObs = obsService.getObservationsByPersonAndConcept(pat, breastfeedingConcept);
+		List<Obs> allCd4Obs = obsService.getObservationsByPersonAndConcept(pat, cd4Concept);
 		
 		Concept currentARTRegimenConcept = getLastObservation(allArvRegimensObs).getValueCoded();
 		
@@ -310,11 +314,14 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		supportingInfoObsMap.put(breastfeedingStatusConceptName, getLastObservation(allBreastfeedingObs));
 		//interested in only the oldest/fisrt observation - ART start date
 		supportingInfoObsMap.put(ARTStartConceptName, getFirstObservation(allArtStartObs));
+		//first and last cd4 results
+		supportingInfoObsMap.put("First " + cd4ConceptName, getFirstObservation(allCd4Obs));
+		supportingInfoObsMap.put("Last " + cd4ConceptName, getLastObservation(allCd4Obs));
 		
 		return supportingInfoObsMap;
 	}
 	
-	//This is essential a linear search ... needs better perfomance optimization
+	//This is essentially a linear search ... needs better perfomance optimization
 	private Obs getFirstObsForCurrRegimen(List<Obs> ARTRegimenObs, Concept currRegimen) {
 		Obs emptyObs = new Obs();
 		emptyObs.setUuid(null);
