@@ -24,12 +24,17 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import ca.uhn.fhir.rest.api.SortOrderEnum;
+import ca.uhn.fhir.rest.api.SortSpec;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.param.ReferenceAndListParam;
 import ca.uhn.fhir.rest.param.ReferenceOrListParam;
 import ca.uhn.fhir.rest.param.ReferenceParam;
+import ca.uhn.fhir.rest.param.TokenAndListParam;
+import ca.uhn.fhir.rest.param.TokenParam;
 import lombok.AccessLevel;
 import lombok.Setter;
+import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DateTimeType;
@@ -48,6 +53,8 @@ import org.openmrs.Provider;
 import org.openmrs.TestOrder;
 import org.openmrs.api.ConceptService;
 import org.openmrs.api.ObsService;
+import org.openmrs.module.fhir2.FhirConstants;
+import org.openmrs.module.fhir2.api.FhirDiagnosticReportService;
 import org.openmrs.module.fhir2.api.FhirTaskService;
 import org.openmrs.module.fhir2.api.translators.ConceptTranslator;
 import org.openmrs.module.fhir2.api.translators.EncounterReferenceTranslator;
@@ -69,6 +76,9 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	
 	@Autowired
 	private FhirTaskService taskService;
+	
+	@Autowired
+	private FhirDiagnosticReportService diagnosticReportService;
 	
 	@Autowired
 	private ConceptTranslator conceptTranslator;
@@ -133,6 +143,8 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			        .addSupportingInfo(observationReferenceTranslator.toFhirResource(obsItem).setDisplay(obsDescription));
 		}
 		
+		serviceRequest.addSupportingInfo(getPrevResults(order.getConcept(), order.getPatient()));
+		
 		//Add requisition id
 		//serviceRequest.setRequisition(
 		//    new Identifier().setSystem("Requisition_id").setValue(determineCommonRequisitionId(order.getUuid())));
@@ -191,6 +203,33 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		} else {
 			return ServiceRequest.ServiceRequestStatus.ACTIVE;
 		}
+	}
+	
+	private Reference getPrevResults(Concept oderConcept, org.openmrs.Patient pat) {
+		
+		//Get Results for concept and patient
+		
+		ReferenceAndListParam patientRef = new ReferenceAndListParam()
+		        .addAnd(new ReferenceOrListParam().add(new ReferenceParam("Patient", null, pat.getUuid())));
+		TokenAndListParam oderCode = new TokenAndListParam().addAnd(new TokenParam(oderConcept.getUuid()));
+		SortSpec sortSpec = new SortSpec().setParamName("_lastupdated").setOrder(SortOrderEnum.DESC);
+		
+		IBundleProvider results = diagnosticReportService.searchForDiagnosticReports(null, patientRef, null, oderCode, null,
+		    null, null, sortSpec, null);
+		
+		List<IBaseResource> prevReports = results.getAllResources();
+		Reference diagnosticReportReference;
+		//get first element
+		if (prevReports.size() > 0) {
+			String reportId = prevReports.get(0).getIdElement().getIdPart();
+			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + reportId)
+			        .setType(FhirConstants.DIAGNOSTIC_REPORT);
+		} else {
+			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + "null")
+			        .setType(FhirConstants.DIAGNOSTIC_REPORT);
+		}
+		
+		return diagnosticReportReference;
 	}
 	
 	private Reference determineServiceRequestPerformer(String orderUuid) {
