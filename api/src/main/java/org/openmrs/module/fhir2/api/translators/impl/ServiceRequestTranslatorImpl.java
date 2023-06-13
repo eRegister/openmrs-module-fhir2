@@ -208,7 +208,6 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	private Reference getPrevResults(Concept oderConcept, org.openmrs.Patient pat) {
 		
 		//Get Results for concept and patient
-		
 		ReferenceAndListParam patientRef = new ReferenceAndListParam()
 		        .addAnd(new ReferenceOrListParam().add(new ReferenceParam("Patient", null, pat.getUuid())));
 		TokenAndListParam oderCode = new TokenAndListParam().addAnd(new TokenParam(oderConcept.getUuid()));
@@ -219,14 +218,15 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		List<IBaseResource> prevReports = results.getAllResources();
 		Reference diagnosticReportReference;
+		String resultName = oderConcept.getDisplayString();
 		//get first element
 		if (prevReports.size() > 0) {
 			String reportId = prevReports.get(0).getIdElement().getIdPart();
 			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + reportId)
-			        .setType(FhirConstants.DIAGNOSTIC_REPORT);
+			        .setType(FhirConstants.DIAGNOSTIC_REPORT).setDisplay(resultName);
 		} else {
 			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + "null")
-			        .setType(FhirConstants.DIAGNOSTIC_REPORT);
+			        .setType(FhirConstants.DIAGNOSTIC_REPORT).setDisplay(resultName);
 		}
 		
 		return diagnosticReportReference;
@@ -313,8 +313,17 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String labSampleType = getSpecimenType(order.getConcept());
 		labSpecimen.setType(new CodeableConcept()
 		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
+		
+		String VLSpecimenCollectionDate = "HIVTC, Viral Load Blood drawn date";
+		Date VLSamplecollectionDate = getLastObservation(obsService.getObservationsByPersonAndConcept(order.getPatient(),
+		    conceptService.getConcept(VLSpecimenCollectionDate))).getValueDate();
+		
+		labSpecimen.setCollection(
+		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(VLSamplecollectionDate)));
+		/* 
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
+		*/
 		
 		return labSpecimen;
 	}
@@ -327,6 +336,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String breastfeedingStatusConceptName = "HIVTC, VL Breastfeeding Status";
 		String startOnCurrRegimen = "Start date for Current ART Regimen";
 		String cd4ConceptName = "HIVTC, CD4";
+		String vlReason = "HIVTC, Viral Load Monitoring Type";
 		
 		//get Obs for these concepts made for this patient (parameter)
 		
@@ -335,12 +345,14 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		Concept pregConcept = conceptService.getConceptByName(pregStatusConceptName);
 		Concept breastfeedingConcept = conceptService.getConceptByName(breastfeedingStatusConceptName);
 		Concept cd4Concept = conceptService.getConceptByName(cd4ConceptName);
+		Concept vlReasonConcept = conceptService.getConceptByName(vlReason);
 		
 		List<Obs> allArvRegimensObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
 		List<Obs> allArtStartObs = obsService.getObservationsByPersonAndConcept(pat, ARTStartConcept);
 		List<Obs> allPregObs = obsService.getObservationsByPersonAndConcept(pat, pregConcept);
 		List<Obs> allBreastfeedingObs = obsService.getObservationsByPersonAndConcept(pat, breastfeedingConcept);
 		List<Obs> allCd4Obs = obsService.getObservationsByPersonAndConcept(pat, cd4Concept);
+		List<Obs> allVlReasonObs = obsService.getObservationsByPersonAndConcept(pat, vlReasonConcept);
 		
 		Concept currentARTRegimenConcept = getLastObservation(allArvRegimensObs).getValueCoded();
 		
@@ -356,6 +368,8 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		//first and last cd4 results
 		supportingInfoObsMap.put("First " + cd4ConceptName, getFirstObservation(allCd4Obs));
 		supportingInfoObsMap.put("Last " + cd4ConceptName, getLastObservation(allCd4Obs));
+		//Reason for VL
+		supportingInfoObsMap.put(vlReason, getLastObservation(allVlReasonObs));
 		
 		return supportingInfoObsMap;
 	}
