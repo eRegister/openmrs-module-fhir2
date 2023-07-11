@@ -134,15 +134,18 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		//serviceRequest.addSpecimen().setReference("#" + labSpecimen.getId());
 		
 		//Get a list of ARV Regimen, Preg status, Breastfeeding status & ART start date (of current regimen) Obs and link it in supporting info
-		Map<String, Obs> supportingInfo = getSupportingInfo(order.getPatient());
+		Map<String, Obs> supportingInfo = getSupportingInfo(order);
 		//Map - value contains Obs and key contains a string refering to info in the Obs
 		for (Map.Entry<String, Obs> entry : supportingInfo.entrySet()) {
 			String obsDescription = entry.getKey();
 			Obs obsItem = entry.getValue();
-			serviceRequest
-			        .addSupportingInfo(observationReferenceTranslator.toFhirResource(obsItem).setDisplay(obsDescription));
+			if (obsItem.getUuid() != null) { //exclude empty obs
+				serviceRequest.addSupportingInfo(
+				    observationReferenceTranslator.toFhirResource(obsItem)/*.setDisplay(obsDescription)*/);
+			}
 		}
 		
+		//Add previous lab test results
 		serviceRequest.addSupportingInfo(getPrevResults(order.getConcept(), order.getPatient()));
 		
 		//Add requisition id
@@ -225,8 +228,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + reportId)
 			        .setType(FhirConstants.DIAGNOSTIC_REPORT).setDisplay(resultName);
 		} else {
-			diagnosticReportReference = new Reference().setReference(FhirConstants.DIAGNOSTIC_REPORT + "/" + "null")
-			        .setType(FhirConstants.DIAGNOSTIC_REPORT).setDisplay(resultName);
+			diagnosticReportReference = null;
 		}
 		
 		return diagnosticReportReference;
@@ -313,23 +315,43 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String labSampleType = getSpecimenType(order.getConcept());
 		labSpecimen.setType(new CodeableConcept()
 		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
-		
+		/* 
 		String VLSpecimenCollectionDate = "HIVTC, Viral Load Blood drawn date";
 		Date VLSamplecollectionDate = getLastObservation(obsService.getObservationsByPersonAndConcept(order.getPatient(),
 		    conceptService.getConcept(VLSpecimenCollectionDate))).getValueDate();
 		
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(VLSamplecollectionDate)));
-		/* 
+		*/
+		
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
-		*/
 		
 		return labSpecimen;
 	}
 	
+	private Map<String, Obs> getSupportingInfo(Order testOrder) {
+		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
+		
+		String testOrderConceptName = testOrder.getConcept().getName().getName();
+		if (testOrderConceptName.contains("Viral")) {
+			//get VL additional information
+			supportingInfoObsMap = getSupportingInfoVL(testOrder.getPatient());
+		} else if (testOrderConceptName.contains("TB")) {
+			//get TB additional information
+			if (testOrderConceptName.contains("Gene")) {
+				supportingInfoObsMap = getSupportingInfoTBGeneX(testOrder.getPatient());
+			}
+		} else {
+			//other tests ... yet to be added
+		}
+		
+		return supportingInfoObsMap;
+		
+	}
+	
 	//get ARV Regimen, Pregnancy, Breastfeeding, etc. Obs for patient whose order is being placed
-	private Map<String, Obs> getSupportingInfo(org.openmrs.Patient pat) {
+	private Map<String, Obs> getSupportingInfoVL(org.openmrs.Patient pat) {
 		String ARTRegimenConceptName = "HIVTC, ART Regimen";
 		String ARTStartConceptName = "HIVTC, ART start date";
 		String pregStatusConceptName = "HIVTC, VL Pregnancy Status";
@@ -371,6 +393,15 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		//Reason for VL
 		supportingInfoObsMap.put(vlReason, getLastObservation(allVlReasonObs));
 		
+		return supportingInfoObsMap;
+	}
+	
+	private Map<String, Obs> getSupportingInfoTBGeneX(org.openmrs.Patient pat) {
+		String GenexReasonConceptName = "TB, Genexpert test type";
+		Concept GenexReasonConcept = conceptService.getConceptByName(GenexReasonConceptName);
+		List<Obs> allGenexReasonObs = obsService.getObservationsByPersonAndConcept(pat, GenexReasonConcept);
+		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
+		supportingInfoObsMap.put(GenexReasonConceptName, getLastObservation(allGenexReasonObs));
 		return supportingInfoObsMap;
 	}
 	
