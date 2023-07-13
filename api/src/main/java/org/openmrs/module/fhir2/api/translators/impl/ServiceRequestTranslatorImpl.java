@@ -13,6 +13,7 @@ import static org.apache.commons.lang3.Validate.notNull;
 
 import javax.annotation.Nonnull;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -39,7 +40,6 @@ import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DateTimeType;
 import org.hl7.fhir.r4.model.IdType;
-import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Period;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
@@ -141,7 +141,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			Obs obsItem = entry.getValue();
 			if (obsItem.getUuid() != null) { //exclude empty obs
 				serviceRequest.addSupportingInfo(
-				    observationReferenceTranslator.toFhirResource(obsItem)/*.setDisplay(obsDescription)*/);
+				    observationReferenceTranslator.toFhirResource(obsItem).setDisplay(obsDescription));
 			}
 		}
 		
@@ -356,7 +356,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String ARTStartConceptName = "HIVTC, ART start date";
 		String pregStatusConceptName = "HIVTC, VL Pregnancy Status";
 		String breastfeedingStatusConceptName = "HIVTC, VL Breastfeeding Status";
-		String startOnCurrRegimen = "Start date for Current ART Regimen";
+		
 		String cd4ConceptName = "HIVTC, CD4";
 		String vlReason = "HIVTC, Viral Load Monitoring Type";
 		
@@ -376,22 +376,37 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		List<Obs> allCd4Obs = obsService.getObservationsByPersonAndConcept(pat, cd4Concept);
 		List<Obs> allVlReasonObs = obsService.getObservationsByPersonAndConcept(pat, vlReasonConcept);
 		
-		Concept currentARTRegimenConcept = getLastObservation(allArvRegimensObs).getValueCoded();
-		
 		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
 		
-		//interested in only the latest observations - ART Regimen, Pregnancy status & Breastfeeding status	
-		supportingInfoObsMap.put(ARTRegimenConceptName, getLastObservation(allArvRegimensObs));
-		supportingInfoObsMap.put(startOnCurrRegimen, getFirstObsForCurrRegimen(allArvRegimensObs, currentARTRegimenConcept));
-		supportingInfoObsMap.put(pregStatusConceptName, getLastObservation(allPregObs));
-		supportingInfoObsMap.put(breastfeedingStatusConceptName, getLastObservation(allBreastfeedingObs));
+		List<Obs> firstDoseRegimensObs = getFirstDosesForAllRegimens(allArvRegimensObs);
+		
+		if (!firstDoseRegimensObs.isEmpty()) {
+			if (firstDoseRegimensObs.size() == 1) {
+				//only curr treatment is here
+				supportingInfoObsMap.put("Current Regimen", firstDoseRegimensObs.get(0));
+			} else {
+				//we have curr & prev
+				int pos = firstDoseRegimensObs.size() - 1;
+				int count = 1;
+				supportingInfoObsMap.put("Current Regimen", firstDoseRegimensObs.get(pos));
+				for (pos = pos - 1; pos >= 0; pos--) {
+					supportingInfoObsMap.put("Previous Regimen " + count, firstDoseRegimensObs.get(pos));
+					count++;
+				}
+			}
+		}
+		
+		//interested in only the latest observations - Pregnancy status & Breastfeeding status	
+		supportingInfoObsMap.put("Pregnancy status", getLastObservation(allPregObs));
+		supportingInfoObsMap.put("Breastfeeding status", getLastObservation(allBreastfeedingObs));
 		//interested in only the oldest/fisrt observation - ART start date
-		supportingInfoObsMap.put(ARTStartConceptName, getFirstObservation(allArtStartObs));
+		supportingInfoObsMap.put("Current Regimen startdate", getFirstObservation(allArtStartObs));
+		
 		//first and last cd4 results
-		supportingInfoObsMap.put("First " + cd4ConceptName, getFirstObservation(allCd4Obs));
-		supportingInfoObsMap.put("Last " + cd4ConceptName, getLastObservation(allCd4Obs));
+		supportingInfoObsMap.put("First CD4", getFirstObservation(allCd4Obs));
+		supportingInfoObsMap.put("Last CD4", getLastObservation(allCd4Obs));
 		//Reason for VL
-		supportingInfoObsMap.put(vlReason, getLastObservation(allVlReasonObs));
+		supportingInfoObsMap.put("VL Reason", getLastObservation(allVlReasonObs));
 		
 		return supportingInfoObsMap;
 	}
@@ -404,20 +419,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		supportingInfoObsMap.put(GenexReasonConceptName, getLastObservation(allGenexReasonObs));
 		return supportingInfoObsMap;
 	}
-	
-	//This is essentially a linear search ... needs better perfomance optimization
-	private Obs getFirstObsForCurrRegimen(List<Obs> ARTRegimenObs, Concept currRegimen) {
-		Obs emptyObs = new Obs();
-		emptyObs.setUuid(null);
 		
-		for (Obs obs : ARTRegimenObs) {
-			if (obs.getValueCoded().equals(currRegimen)) {
-				return obs;
-			}
-		}
-		return emptyObs;
-	}
-	
 	private Obs getLastObservation(List<Obs> observations) {
 		if (observations.size() == 0) {
 			Obs emptyObs = new Obs();
@@ -454,6 +456,30 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			});
 			return observations.get(0);
 		}
+	}
+	
+	private List<Obs> getFirstDosesForAllRegimens(List<Obs> allARTRegimenObs) {
+		//Sort collection by obsdate
+		Collections.sort(allARTRegimenObs, new Comparator<Obs>() {
+			
+			@Override
+			public int compare(Obs obs1, Obs obs2) {
+				//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
+				return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+			}
+		});
+		//essentially this is deduplication - linear search
+		List<Concept> processedConcepts = new ArrayList<Concept>();
+		List<Obs> deduplicatedRegimens = new ArrayList<Obs>();
+		deduplicatedRegimens.add(allARTRegimenObs.get(0));
+		processedConcepts.add(deduplicatedRegimens.get(0).getValueCoded());
+		for (Obs obs : allARTRegimenObs) {
+			if (!processedConcepts.contains(obs.getValueCoded())) {
+				processedConcepts.add(obs.getValueCoded());
+				deduplicatedRegimens.add(obs);
+			}
+		}
+		return deduplicatedRegimens;
 	}
 	
 }
