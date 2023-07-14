@@ -49,6 +49,7 @@ import org.openmrs.Concept;
 import org.openmrs.Encounter;
 import org.openmrs.Obs;
 import org.openmrs.Order;
+import org.openmrs.Patient;
 import org.openmrs.Provider;
 import org.openmrs.TestOrder;
 import org.openmrs.api.ConceptService;
@@ -139,14 +140,14 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		for (Map.Entry<String, Obs> entry : supportingInfo.entrySet()) {
 			String obsDescription = entry.getKey();
 			Obs obsItem = entry.getValue();
-			if (obsItem.getUuid() != null) { //exclude empty obs
+			if (obsItem != null) { //exclude empty obs
 				serviceRequest.addSupportingInfo(
 				    observationReferenceTranslator.toFhirResource(obsItem).setDisplay(obsDescription));
 			}
 		}
 		
-		//Add previous lab test results
-		serviceRequest.addSupportingInfo(getPrevResults(order.getConcept(), order.getPatient()));
+		//Add previous lab test results -- as a Diagnostic Report
+		//serviceRequest.addSupportingInfo(getPrevResults(order.getConcept(), order.getPatient()));
 		
 		//Add requisition id
 		//serviceRequest.setRequisition(
@@ -350,36 +351,19 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 	}
 	
-	//get ARV Regimen, Pregnancy, Breastfeeding, etc. Obs for patient whose order is being placed
+	//Collect VL supporting information
 	private Map<String, Obs> getSupportingInfoVL(org.openmrs.Patient pat) {
-		String ARTRegimenConceptName = "HIVTC, ART Regimen";
+		// String ARTRegimenConceptName = "HIVTC, ART Regimen";
 		String ARTStartConceptName = "HIVTC, ART start date";
 		String pregStatusConceptName = "HIVTC, VL Pregnancy Status";
 		String breastfeedingStatusConceptName = "HIVTC, VL Breastfeeding Status";
-		
 		String cd4ConceptName = "HIVTC, CD4";
-		String vlReason = "HIVTC, Viral Load Monitoring Type";
-		
-		//get Obs for these concepts made for this patient (parameter)
-		
-		Concept ARTRegimenConcept = conceptService.getConceptByName(ARTRegimenConceptName);
-		Concept ARTStartConcept = conceptService.getConceptByName(ARTStartConceptName);
-		Concept pregConcept = conceptService.getConceptByName(pregStatusConceptName);
-		Concept breastfeedingConcept = conceptService.getConceptByName(breastfeedingStatusConceptName);
-		Concept cd4Concept = conceptService.getConceptByName(cd4ConceptName);
-		Concept vlReasonConcept = conceptService.getConceptByName(vlReason);
-		
-		List<Obs> allArvRegimensObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
-		List<Obs> allArtStartObs = obsService.getObservationsByPersonAndConcept(pat, ARTStartConcept);
-		List<Obs> allPregObs = obsService.getObservationsByPersonAndConcept(pat, pregConcept);
-		List<Obs> allBreastfeedingObs = obsService.getObservationsByPersonAndConcept(pat, breastfeedingConcept);
-		List<Obs> allCd4Obs = obsService.getObservationsByPersonAndConcept(pat, cd4Concept);
-		List<Obs> allVlReasonObs = obsService.getObservationsByPersonAndConcept(pat, vlReasonConcept);
+		String vlReasonConceptName = "HIVTC, Viral Load Monitoring Type";
 		
 		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
 		
-		List<Obs> firstDoseRegimensObs = getFirstDosesForAllRegimens(allArvRegimensObs);
-		
+		//Get ART Regimens & add to hashmap
+		List<Obs> firstDoseRegimensObs = getARTRegimens(pat);
 		if (!firstDoseRegimensObs.isEmpty()) {
 			if (firstDoseRegimensObs.size() == 1) {
 				//only curr treatment is here
@@ -395,76 +379,68 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 				}
 			}
 		}
-		
+		//Add Previous VL results
+		supportingInfoObsMap.put("Prev VL Results", getPrevVLResult(pat));
 		//interested in only the latest observations - Pregnancy status & Breastfeeding status	
-		supportingInfoObsMap.put("Pregnancy status", getLastObservation(allPregObs));
-		supportingInfoObsMap.put("Breastfeeding status", getLastObservation(allBreastfeedingObs));
+		supportingInfoObsMap.put("Pregnancy status", getObsFor(pat, pregStatusConceptName, "last"));
+		supportingInfoObsMap.put("Breastfeeding status", getObsFor(pat, breastfeedingStatusConceptName, "last"));
 		//interested in only the oldest/fisrt observation - ART start date
-		supportingInfoObsMap.put("Current Regimen startdate", getFirstObservation(allArtStartObs));
-		
+		supportingInfoObsMap.put("Current Regimen startdate", getObsFor(pat, ARTStartConceptName, "first"));
 		//first and last cd4 results
-		supportingInfoObsMap.put("First CD4", getFirstObservation(allCd4Obs));
-		supportingInfoObsMap.put("Last CD4", getLastObservation(allCd4Obs));
-		//Reason for VL
-		supportingInfoObsMap.put("VL Reason", getLastObservation(allVlReasonObs));
+		supportingInfoObsMap.put("First CD4", getObsFor(pat, cd4ConceptName, "first"));
+		supportingInfoObsMap.put("Last CD4", getObsFor(pat, cd4ConceptName, "last"));
+		//latest Reason for VL
+		supportingInfoObsMap.put("VL Reason", getObsFor(pat, vlReasonConceptName, "last"));
 		
 		return supportingInfoObsMap;
 	}
 	
-	private Map<String, Obs> getSupportingInfoTBGeneX(org.openmrs.Patient pat) {
-		String GenexReasonConceptName = "TB, Genexpert test type";
-		Concept GenexReasonConcept = conceptService.getConceptByName(GenexReasonConceptName);
-		List<Obs> allGenexReasonObs = obsService.getObservationsByPersonAndConcept(pat, GenexReasonConcept);
-		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
-		supportingInfoObsMap.put(GenexReasonConceptName, getLastObservation(allGenexReasonObs));
-		return supportingInfoObsMap;
-	}
+	//Gets previous viral load results (latest)
+	private Obs getPrevVLResult(Patient pat) {
+		String vlResultConceptName = "HIVTC, Viral Load Result";
+		String vlDataConceptName = "HIVTC, Viral Load";
+		Concept vlResultConcept = conceptService.getConceptByName(vlResultConceptName);
+		List<Obs> allVlResultObs = obsService.getObservationsByPersonAndConcept(pat, vlResultConcept);
 		
-	private Obs getLastObservation(List<Obs> observations) {
-		if (observations.size() == 0) {
-			Obs emptyObs = new Obs();
-			emptyObs.setUuid(null);
-			return emptyObs;
+		Obs lastVLResult = getLastObservation(allVlResultObs);
+		
+		if (lastVLResult.getValueCoded().getDisplayString().equals("Greater or equals to 20")) {
+			Concept vlDataConcept = conceptService.getConceptByName(vlDataConceptName);
+			List<Obs> allVlDataObs = obsService.getObservationsByPersonAndConcept(pat, vlDataConcept);
+			Obs lastVLResultData = getLastObservation(allVlDataObs);
+			return lastVLResultData;
 		} else {
-			// Sort the list by date created
-			Collections.sort(observations, new Comparator<Obs>() {
-				
-				@Override
-				public int compare(Obs obs1, Obs obs2) {
-					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
-					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
-				}
-			});
-			return observations.get(observations.size() - 1);
+			return lastVLResult;
 		}
 	}
 	
-	private Obs getFirstObservation(List<Obs> observations) {
-		if (observations.size() == 0) {
-			Obs emptyObs = new Obs();
-			emptyObs.setUuid(null);
-			return emptyObs;
-		} else {
-			// Sort the list by date created
-			Collections.sort(observations, new Comparator<Obs>() {
-				
-				@Override
-				public int compare(Obs obs1, Obs obs2) {
-					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
-					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
-				}
-			});
-			return observations.get(0);
+	//Gets either first or last Obs for a given concept
+	private Obs getObsFor(Patient pat, String conceptName, String position) {
+		Concept aConcept = conceptService.getConceptByName(conceptName);
+		List<Obs> allObs = obsService.getObservationsByPersonAndConcept(pat, aConcept);
+		if (!allObs.isEmpty()) {
+			if (position.equals("first")) {
+				return getFirstObservation(allObs);
+			} else if (position.equals("last")) {
+				return getLastObservation(allObs);
+			} else {
+				//shoudn't be here
+				return null;
+			}
 		}
+		return null;
 	}
 	
-	private List<Obs> getFirstDosesForAllRegimens(List<Obs> allARTRegimenObs) {
+	//Gets 1st doses for all ART regimens
+	private List<Obs> getARTRegimens(Patient pat) {
+		String ARTRegimenConceptName = "HIVTC, ART Regimen";
+		Concept ARTRegimenConcept = conceptService.getConceptByName(ARTRegimenConceptName);
+		List<Obs> allARTRegimenObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
 		//Sort collection by obsdate
 		Collections.sort(allARTRegimenObs, new Comparator<Obs>() {
 			
 			@Override
 			public int compare(Obs obs1, Obs obs2) {
-				//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
 				return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
 			}
 		});
@@ -482,4 +458,46 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		return deduplicatedRegimens;
 	}
 	
+	private Map<String, Obs> getSupportingInfoTBGeneX(org.openmrs.Patient pat) {
+		String GenexReasonConceptName = "TB, Genexpert test type";
+		Concept GenexReasonConcept = conceptService.getConceptByName(GenexReasonConceptName);
+		List<Obs> allGenexReasonObs = obsService.getObservationsByPersonAndConcept(pat, GenexReasonConcept);
+		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
+		supportingInfoObsMap.put(GenexReasonConceptName, getLastObservation(allGenexReasonObs));
+		return supportingInfoObsMap;
+	}
+	
+	private Obs getLastObservation(List<Obs> observations) {
+		if (observations.size() == 0) {
+			return null;
+		} else {
+			// Sort the list by date created
+			Collections.sort(observations, new Comparator<Obs>() {
+				
+				@Override
+				public int compare(Obs obs1, Obs obs2) {
+					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
+					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+				}
+			});
+			return observations.get(observations.size() - 1);
+		}
+	}
+	
+	private Obs getFirstObservation(List<Obs> observations) {
+		if (observations.size() == 0) {
+			return null;
+		} else {
+			// Sort the list by date created
+			Collections.sort(observations, new Comparator<Obs>() {
+				
+				@Override
+				public int compare(Obs obs1, Obs obs2) {
+					//return obs1.getDateCreated().compareTo(obs2.getDateCreated());
+					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+				}
+			});
+			return observations.get(0);
+		}
+	}
 }
