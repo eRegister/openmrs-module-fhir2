@@ -13,7 +13,7 @@ import static org.apache.commons.lang3.Validate.notNull;
 
 import javax.annotation.Nonnull;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -129,13 +129,15 @@ public class TaskTranslatorImpl implements TaskTranslator {
 		   Modified the code a bit to accomodate an additional identifier
 		   to be used to link multiple serviceRequests
 		*/
-		// fhirTask.setIdentifier(Collections.singletonList(new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER).setValue(openmrsTask.getUuid())));
+		//Reverted back to this after deciding to generate a lab bundle per order
+		fhirTask.setIdentifier(Collections.singletonList(
+		    new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER).setValue(openmrsTask.getUuid())));
 		
-		Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
-		        .setValue(openmrsTask.getUuid());
-		Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
-		        .setValue(LabOrderNumberGenerator());
-		fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
+		// Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
+		//         .setValue(openmrsTask.getUuid());
+		// Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
+		//         .setValue(LabOrderNumberGenerator());
+		// fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
 		
 		fhirTask.getMeta().setLastUpdated(openmrsTask.getDateChanged());
 	}
