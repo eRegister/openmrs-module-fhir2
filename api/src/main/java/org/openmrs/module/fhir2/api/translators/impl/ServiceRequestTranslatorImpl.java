@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import ca.uhn.fhir.rest.api.SortOrderEnum;
@@ -40,6 +41,7 @@ import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DateTimeType;
 import org.hl7.fhir.r4.model.IdType;
+import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Period;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.ServiceRequest;
@@ -127,8 +129,9 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
 		
 		//Include the order number to the ServiceRequest
-		//serviceRequest.addIdentifier().setSystem("eRegister Lab Order Number").setValue(LabOrderNumberGenerator());
-		
+		//serviceRequest.addIdentifier().setSystem("Lab Order Number").setValue(generateLabOrderNumber(order));
+		serviceRequest.setRequisition(
+		    new Identifier().setSystem("eRegister Lab order number").setValue(generateLabOrderNumber(order)));
 		// Create a new Specimen resource and add it to the ServiceRequest as a contained resource
 		Specimen labSpecimen = getSpecimen(order);
 		serviceRequest.addContained(labSpecimen);
@@ -293,6 +296,61 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		System.out.println(labOrderNumber);
 		
 		return labOrderNumber;
+	}
+	
+	//Generate an order number of regex [A-Z]{4}[0-9]{6} based on the facility code & OpenMRS order number
+	//[A-Z]{4} from the facility code & [0-9]{6} from the order number
+	private String generateLabOrderNumber(Order order) {
+		//transform facility code to 4 chars (should be deterministic & collision-free)
+		//C1022 to [A-Z]{4} by doing a C + [A-Z]{3}
+		String facilityCode = order.getEncounter().getLocation().getParentLocation().getActiveAttributes().stream()
+		        .findFirst().get().getValueReference();
+		String failityCodeHash = hashFacilityCode(facilityCode);
+		
+		String omrsOrderNum = order.getOrderNumber(); //e.g. ORD-1234
+		omrsOrderNum = omrsOrderNum.replaceAll("\\D", ""); // remove non-digits
+		int omrsOrderNumInt = Integer.parseInt(omrsOrderNum) % 1000000; //ensure it is less than 6 digits long
+		omrsOrderNum = String.valueOf(omrsOrderNumInt);
+		//prefix order num integer part with zeros if required
+		StringBuilder paddedOmrsOrderNum = new StringBuilder(omrsOrderNum);
+		int zerosToPad = 10 - (failityCodeHash.length() + omrsOrderNum.length());
+		while (zerosToPad > 0) {
+			paddedOmrsOrderNum.insert(0, "0");
+			zerosToPad--;
+		}
+		return failityCodeHash + paddedOmrsOrderNum;
+	}
+	
+	//generate a deterministic & collision-free 4 char code for each facility.
+	private String hashFacilityCode(String facilityCode) {
+		
+		String pattern1 = "[A-Z]\\d{4}"; //most common pattern e.g. C1022 -> C + 1022nd 3char permutation
+		String pattern2 = "[A-Z]\\d{5}"; //e.g. C10223 -> 10223rd 4char permutation
+		char[] alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
+		if (Pattern.matches(pattern1, facilityCode)) {
+			int intPart = Integer.parseInt(facilityCode.substring(1));
+			intPart--; // Adjust int to start from 0 instead of 1
+			char thirdChar = alphabet[intPart % 26];
+			char secondChar = alphabet[(intPart / 26) % 26];
+			char firstChar = alphabet[(intPart / 26 / 26) % 26];
+			return facilityCode.charAt(0) + String.valueOf(firstChar) + String.valueOf(secondChar)
+			        + String.valueOf(thirdChar);
+		} else if (Pattern.matches(pattern2, facilityCode)) {
+			int intPart = Integer.parseInt(facilityCode.substring(1));
+			intPart--; // Adjust int to start from 0 instead of 1
+			char forthChar = alphabet[intPart % 26];
+			char thirdChar = alphabet[(intPart / 26) % 26];
+			char secondChar = alphabet[(intPart / 26 / 26) % 26];
+			//char firstChar = alphabet[(intPart / 26 / 26 / 26) % 26];
+			return "Y" + String.valueOf(secondChar) + String.valueOf(thirdChar) + String.valueOf(forthChar);
+		} else { //for all other patterns. e.g. POST-1, POST-10
+			int intPart = Integer.parseInt(facilityCode.replaceAll("\\D", "")); //remove non-digits
+			intPart--; // Adjust int to start from 0 instead of 1
+			char thirdChar = alphabet[intPart % 26];
+			char secondChar = alphabet[(intPart / 26) % 26];
+			char firstChar = alphabet[(intPart / 26 / 26) % 26];
+			return "Z" + String.valueOf(firstChar) + String.valueOf(secondChar) + String.valueOf(thirdChar);
+		}
 	}
 	
 	private String getSpecimenType(Concept orderConcept) {
