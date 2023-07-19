@@ -374,18 +374,18 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String labSampleType = getSpecimenType(order.getConcept());
 		labSpecimen.setType(new CodeableConcept()
 		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
-		/* 
-		String VLSpecimenCollectionDate = "HIVTC, Viral Load Blood drawn date";
+		
+		String VLSpecimenCollectionDate = "Specimen collection date & time";
 		Date VLSamplecollectionDate = getLastObservation(obsService.getObservationsByPersonAndConcept(order.getPatient(),
 		    conceptService.getConcept(VLSpecimenCollectionDate))).getValueDate();
 		
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(VLSamplecollectionDate)));
-		*/
 		
+		/* 
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
-		
+		*/
 		return labSpecimen;
 	}
 	
@@ -438,7 +438,10 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			}
 		}
 		//Add Previous VL results
-		supportingInfoObsMap.put("Prev VL Results", getPrevVLResult(pat));
+		Obs prevVLResults = getPrevVLResult(pat);
+		if (prevVLResults != null) {
+			supportingInfoObsMap.put("Prev VL Results", prevVLResults);
+		}
 		//interested in only the latest observations - Pregnancy status & Breastfeeding status	
 		supportingInfoObsMap.put("Pregnancy status", getObsFor(pat, pregStatusConceptName, "last"));
 		supportingInfoObsMap.put("Breastfeeding status", getObsFor(pat, breastfeedingStatusConceptName, "last"));
@@ -459,17 +462,20 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String vlDataConceptName = "HIVTC, Viral Load";
 		Concept vlResultConcept = conceptService.getConceptByName(vlResultConceptName);
 		List<Obs> allVlResultObs = obsService.getObservationsByPersonAndConcept(pat, vlResultConcept);
-		
-		Obs lastVLResult = getLastObservation(allVlResultObs);
-		
-		if (lastVLResult.getValueCoded().getDisplayString().equals("Greater or equals to 20")) {
-			Concept vlDataConcept = conceptService.getConceptByName(vlDataConceptName);
-			List<Obs> allVlDataObs = obsService.getObservationsByPersonAndConcept(pat, vlDataConcept);
-			Obs lastVLResultData = getLastObservation(allVlDataObs);
-			return lastVLResultData;
-		} else {
-			return lastVLResult;
+		if (!allVlResultObs.isEmpty()) {
+			Obs lastVLResult = getLastObservation(allVlResultObs);
+			
+			if (lastVLResult.getValueCoded().getDisplayString().equals("Greater or equals to 20")) {
+				Concept vlDataConcept = conceptService.getConceptByName(vlDataConceptName);
+				List<Obs> allVlDataObs = obsService.getObservationsByPersonAndConcept(pat, vlDataConcept);
+				Obs lastVLResultData = getLastObservation(allVlDataObs);
+				return lastVLResultData;
+			} else {
+				return lastVLResult;
+			}
 		}
+		return null; //patient does not have any prev vl results
+		
 	}
 	
 	//Gets either first or last Obs for a given concept
@@ -494,26 +500,30 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		String ARTRegimenConceptName = "HIVTC, ART Regimen";
 		Concept ARTRegimenConcept = conceptService.getConceptByName(ARTRegimenConceptName);
 		List<Obs> allARTRegimenObs = obsService.getObservationsByPersonAndConcept(pat, ARTRegimenConcept);
-		//Sort collection by obsdate
-		Collections.sort(allARTRegimenObs, new Comparator<Obs>() {
-			
-			@Override
-			public int compare(Obs obs1, Obs obs2) {
-				return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
-			}
-		});
-		//essentially this is deduplication - linear search
-		List<Concept> processedConcepts = new ArrayList<Concept>();
 		List<Obs> deduplicatedRegimens = new ArrayList<Obs>();
-		deduplicatedRegimens.add(allARTRegimenObs.get(0));
-		processedConcepts.add(deduplicatedRegimens.get(0).getValueCoded());
-		for (Obs obs : allARTRegimenObs) {
-			if (!processedConcepts.contains(obs.getValueCoded())) {
-				processedConcepts.add(obs.getValueCoded());
-				deduplicatedRegimens.add(obs);
+		if (!allARTRegimenObs.isEmpty()) {
+			//Sort collection by obsdate
+			Collections.sort(allARTRegimenObs, new Comparator<Obs>() {
+				
+				@Override
+				public int compare(Obs obs1, Obs obs2) {
+					return obs1.getObsDatetime().compareTo(obs2.getObsDatetime());
+				}
+			});
+			//essentially this is deduplication - linear search
+			List<Concept> processedConcepts = new ArrayList<Concept>();
+			
+			deduplicatedRegimens.add(allARTRegimenObs.get(0));
+			processedConcepts.add(deduplicatedRegimens.get(0).getValueCoded());
+			for (Obs obs : allARTRegimenObs) {
+				if (!processedConcepts.contains(obs.getValueCoded())) {
+					processedConcepts.add(obs.getValueCoded());
+					deduplicatedRegimens.add(obs);
+				}
 			}
+			return deduplicatedRegimens;
 		}
-		return deduplicatedRegimens;
+		return deduplicatedRegimens; //return an empty list
 	}
 	
 	private Map<String, Obs> getSupportingInfoTBGeneX(org.openmrs.Patient pat) {
