@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+// import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -66,6 +67,9 @@ import org.openmrs.module.fhir2.api.translators.OrderIdentifierTranslator;
 import org.openmrs.module.fhir2.api.translators.PatientReferenceTranslator;
 import org.openmrs.module.fhir2.api.translators.PractitionerReferenceTranslator;
 import org.openmrs.module.fhir2.api.translators.ServiceRequestTranslator;
+// These guys are here for logging - debug
+// import org.slf4j.Logger;
+// import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -107,6 +111,8 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	@Autowired
 	private ObsService obsService;
 	
+	//private static final Logger log = LoggerFactory.getLogger(ServiceRequestTranslatorImpl.class);
+	
 	@Override
 	public ServiceRequest toFhirResource(@Nonnull TestOrder order) {
 		notNull(order, "The TestOrder object should not be null");
@@ -130,8 +136,9 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		//Include the order number to the ServiceRequest
 		//serviceRequest.addIdentifier().setSystem("Lab Order Number").setValue(generateLabOrderNumber(order));
-		serviceRequest.setRequisition(
-		    new Identifier().setSystem("eRegister Lab order number").setValue(generateLabOrderNumber(order)));
+		String labOrderNumber = generateLabOrderNumber(order);
+		serviceRequest.setRequisition(new Identifier().setSystem("eRegister Lab order number").setValue(labOrderNumber));
+		persistLabOrderNumber(order, labOrderNumber);
 		// Create a new Specimen resource and add it to the ServiceRequest as a contained resource
 		Specimen labSpecimen = getSpecimen(order);
 		serviceRequest.addContained(labSpecimen);
@@ -353,6 +360,26 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		}
 	}
 	
+	//Persist order number as an observation
+	private void persistLabOrderNumber(Order order, String eregisterLabOrderNum) {
+		//check if order num is already persisted
+		Concept labOrderConcept = conceptService.getConceptByName("eRegister Lab Order Number");
+		List<Obs> existingLabOrderNums = obsService.getObservationsByPersonAndConcept(order.getPatient(), labOrderConcept);
+		if (!existingLabOrderNums.isEmpty()) {
+			for (Obs observation : existingLabOrderNums) {
+				if (observation.getValueText().equals(eregisterLabOrderNum)) {
+					return;
+				}
+			}
+		}
+		//we'll get to this point if the lab order num is not yet persisted .. so persist it
+		Obs newLabOrderObs = new Obs(order.getPatient(), labOrderConcept, order.getDateCreated(),
+		        order.getEncounter().getLocation());
+		newLabOrderObs.setEncounter(order.getEncounter());
+		newLabOrderObs.setValueText(eregisterLabOrderNum);
+		obsService.saveObs(newLabOrderObs, null);
+	}
+	
 	private String getSpecimenType(Concept orderConcept) {
 		
 		//ConceptService conceptService = Context.getConceptService();
@@ -376,12 +403,11 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
 		
 		String VLSpecimenCollectionDate = "Specimen collection date & time";
-		Date VLSamplecollectionDate = getLastObservation(obsService.getObservationsByPersonAndConcept(order.getPatient(),
-		    conceptService.getConcept(VLSpecimenCollectionDate))).getValueDate();
-		
-		labSpecimen.setCollection(
-		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(VLSamplecollectionDate)));
-		
+		Obs specimenCollectionDateTimeObs = getObsFor(order.getPatient(), VLSpecimenCollectionDate, "last");
+		if (specimenCollectionDateTimeObs != null) {
+			labSpecimen.setCollection(new Specimen.SpecimenCollectionComponent()
+			        .setCollected(new DateTimeType(specimenCollectionDateTimeObs.getValueDate())));
+		}
 		/* 
 		labSpecimen.setCollection(
 		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
