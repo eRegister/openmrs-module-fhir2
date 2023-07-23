@@ -376,6 +376,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		Obs newLabOrderObs = new Obs(order.getPatient(), labOrderConcept, order.getDateCreated(),
 		        order.getEncounter().getLocation());
 		newLabOrderObs.setEncounter(order.getEncounter());
+		newLabOrderObs.setOrder(order);
 		newLabOrderObs.setValueText(eregisterLabOrderNum);
 		obsService.saveObs(newLabOrderObs, null);
 	}
