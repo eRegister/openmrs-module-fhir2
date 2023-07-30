@@ -11,12 +11,6 @@ package org.openmrs.module.fhir2.api.translators.impl;
 
 import javax.annotation.Nonnull;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.Period;
-import java.time.ZoneId;
-
-import ca.uhn.fhir.model.api.TemporalPrecisionEnum;
 import org.hl7.fhir.r4.model.DateType;
 import org.openmrs.Person;
 import org.openmrs.module.fhir2.api.translators.BirthDateTranslator;
@@ -30,7 +24,7 @@ public class BirthDateTranslatorImpl implements BirthDateTranslator {
 		if (person.getBirthdate() == null) {
 			return null;
 		}
-		
+		/* Disable birthdate estimation logic ----------
 		if (person.getBirthdateEstimated() != null && person.getBirthdateEstimated()) {
 			DateType dateType = new DateType();
 			LocalDate now = LocalDate.now();
@@ -48,6 +42,8 @@ public class BirthDateTranslatorImpl implements BirthDateTranslator {
 			
 			return dateType;
 		}
+		*/
+		// End of Disable birthdate estimation logic --------
 		
 		return new DateType(person.getBirthdate());
 	}
