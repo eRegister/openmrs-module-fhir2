@@ -131,8 +131,10 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		        .setValue(order.getEncounter().getLocation().getParentLocation().toString());
 		
 		//Include facility code
-		serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
-		        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
+		if (!order.getEncounter().getLocation().getParentLocation().getActiveAttributes().isEmpty()) {
+			serviceRequest.addIdentifier().setSystem("Facility_code").setValue(order.getEncounter().getLocation()
+			        .getParentLocation().getActiveAttributes().stream().findFirst().get().getValueReference());
+		}
 		
 		//Include the order number to the ServiceRequest
 		//serviceRequest.addIdentifier().setSystem("Lab Order Number").setValue(generateLabOrderNumber(order));
@@ -310,9 +312,15 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	private String generateLabOrderNumber(Order order) {
 		//transform facility code to 4 chars (should be deterministic & collision-free)
 		//C1022 to [A-Z]{4} by doing a C + [A-Z]{3}
-		String facilityCode = order.getEncounter().getLocation().getParentLocation().getActiveAttributes().stream()
-		        .findFirst().get().getValueReference();
-		String failityCodeHash = hashFacilityCode(facilityCode);
+		String failityCodeHash = "";
+		if (order.getEncounter().getLocation().getParentLocation().getActiveAttributes().isEmpty()) {
+			//facility code not set on Indentifier source so we're putting "XYYZ" to prefix order num
+			failityCodeHash = "WXYZ";
+		} else {
+			String facilityCode = order.getEncounter().getLocation().getParentLocation().getActiveAttributes().stream()
+			        .findFirst().get().getValueReference();
+			failityCodeHash = hashFacilityCode(facilityCode);
+		}
 		
 		String omrsOrderNum = order.getOrderNumber(); //e.g. ORD-1234
 		omrsOrderNum = omrsOrderNum.replaceAll("\\D", ""); // remove non-digits
