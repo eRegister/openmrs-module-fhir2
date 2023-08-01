@@ -38,8 +38,6 @@ import ca.uhn.fhir.rest.param.TokenParam;
 import lombok.AccessLevel;
 import lombok.Setter;
 import org.hl7.fhir.instance.model.api.IBaseResource;
-import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.DateTimeType;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Identifier;
@@ -389,7 +387,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		obsService.saveObs(newLabOrderObs, null);
 	}
 	
-	private String getSpecimenType(Concept orderConcept) {
+	private Concept getSpecimenType(Concept orderConcept) {
 		
 		//ConceptService conceptService = Context.getConceptService();
 		Concept labSamplesConcept = conceptService.getConceptByName("Lab Samples");
@@ -397,19 +395,19 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		for (Concept concept : labSamplesSet) {
 			if (concept.getSetMembers().contains(orderConcept)) {
-				return concept.getDisplayString();
+				return concept;
 			}
 		}
-		return "Cannot determine specimen type";
+		return null;
 	}
 	
 	//construct specimen
 	private Specimen getSpecimen(TestOrder order) {
 		Specimen labSpecimen = new Specimen();
 		labSpecimen.setId(new IdType("Specimen", UUID.randomUUID().toString()));
-		String labSampleType = getSpecimenType(order.getConcept());
-		labSpecimen.setType(new CodeableConcept()
-		        .addCoding(new Coding().setSystem("Lab specimen type").setDisplay(labSampleType)).setText(labSampleType));
+		Concept labSampleTypeConcept = getSpecimenType(order.getConcept());
+		
+		labSpecimen.setType(conceptTranslator.toFhirResource(labSampleTypeConcept));
 		
 		String VLSpecimenCollectionDate = "Specimen collection date & time";
 		Obs specimenCollectionDateTimeObs = getObsFor(order.getPatient(), VLSpecimenCollectionDate, "last");
