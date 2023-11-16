@@ -431,7 +431,7 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			supportingInfoObsMap = getSupportingInfoVL(testOrder.getPatient());
 		} else if (testOrderConceptName.contains("TB")) {
 			//get TB additional information
-			if (testOrderConceptName.contains("Gene")) {
+			if (testOrderConceptName.contains("GeneXpert")) {
 				supportingInfoObsMap = getSupportingInfoTBGeneX(testOrder.getPatient());
 			}
 		} else {
