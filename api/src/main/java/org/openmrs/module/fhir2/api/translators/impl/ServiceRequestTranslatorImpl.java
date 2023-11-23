@@ -560,11 +560,20 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 	}
 	
 	private Map<String, Obs> getSupportingInfoTBGeneX(org.openmrs.Patient pat) {
-		String GenexReasonConceptName = "TB, Genexpert test type";
-		Concept GenexReasonConcept = conceptService.getConceptByName(GenexReasonConceptName);
-		List<Obs> allGenexReasonObs = obsService.getObservationsByPersonAndConcept(pat, GenexReasonConcept);
+		//Supporting information concepts
+		String TBTestReason = "Lab Test, Purpose of Request";
+		String TB1stTestSampleCollection = "Collection Date 1st Sample";
+		
+		Concept TBTestReasonConcept = conceptService.getConceptByName(TBTestReason);
+		List<Obs> allTBTestReasonObs = obsService.getObservationsByPersonAndConcept(pat, TBTestReasonConcept);
 		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
-		supportingInfoObsMap.put(GenexReasonConceptName, getLastObservation(allGenexReasonObs));
+		supportingInfoObsMap.put(TBTestReason, getLastObservation(allTBTestReasonObs));
+		
+		Concept TB1stTestSampleCollectionConcept = conceptService.getConceptByName(TB1stTestSampleCollection);
+		List<Obs> allTB1stTestSampleCollectionObs = obsService.getObservationsByPersonAndConcept(pat,
+		    TB1stTestSampleCollectionConcept);
+		supportingInfoObsMap.put(TB1stTestSampleCollection, getLastObservation(allTB1stTestSampleCollectionObs));
+		
 		return supportingInfoObsMap;
 	}
 	
