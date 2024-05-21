@@ -409,16 +409,26 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 		
 		labSpecimen.setType(conceptTranslator.toFhirResource(labSampleTypeConcept));
 		
-		String VLSpecimenCollectionDate = "Specimen collection date & time";
-		Obs specimenCollectionDateTimeObs = getObsFor(order.getPatient(), VLSpecimenCollectionDate, "last");
-		if (specimenCollectionDateTimeObs != null) {
-			labSpecimen.setCollection(new Specimen.SpecimenCollectionComponent()
-			        .setCollected(new DateTimeType(specimenCollectionDateTimeObs.getValueDate())));
+		String testOrderConceptName = order.getConcept().getName().getName();
+		String specimenCollectionDate = "";
+		if (testOrderConceptName.contains("Viral")) {
+			specimenCollectionDate = "HIVTC, Viral Load Blood drawn date";
+		} else if (testOrderConceptName.contains("TB")) {
+			specimenCollectionDate = "TB, Specimen collection datetime";
 		}
-		/* 
-		labSpecimen.setCollection(
-		    new Specimen.SpecimenCollectionComponent().setCollected(new DateTimeType(order.getCommentToFulfiller())));
-		*/
+		
+		if (!specimenCollectionDate.equals("")) {
+			// String VLSpecimenCollectionDate = "Specimen collection date & time";
+			Obs specimenCollectionDateTimeObs = getObsFor(order.getPatient(), specimenCollectionDate, "last");
+			if (specimenCollectionDateTimeObs != null) {
+				labSpecimen.setCollection(new Specimen.SpecimenCollectionComponent()
+				        .setCollected(new DateTimeType(specimenCollectionDateTimeObs.getValueDate())));
+			} else {
+				//set date time to now
+				labSpecimen.setCollection(new Specimen.SpecimenCollectionComponent().setCollected(DateTimeType.now()));
+			}
+			return labSpecimen;
+		}
 		return labSpecimen;
 	}
 	
@@ -431,15 +441,35 @@ public class ServiceRequestTranslatorImpl extends BaseReferenceHandlingTranslato
 			supportingInfoObsMap = getSupportingInfoVL(testOrder.getPatient());
 		} else if (testOrderConceptName.contains("TB")) {
 			//get TB additional information
-			if (testOrderConceptName.contains("GeneXpert")) {
-				supportingInfoObsMap = getSupportingInfoTBGeneX(testOrder.getPatient());
-			}
+			// if (testOrderConceptName.contains("GeneXpert")) {
+			// 	supportingInfoObsMap = getSupportingInfoTBGeneX(testOrder.getPatient());
+			// }
+			supportingInfoObsMap = getSupportingInfoTB(testOrder.getPatient());
 		} else {
 			//other tests ... yet to be added
 		}
 		
 		return supportingInfoObsMap;
 		
+	}
+	
+	//Collect TB supporting information
+	private Map<String, Obs> getSupportingInfoTB(Patient pat) {
+		Map<String, Obs> supportingInfoObsMap = new LinkedHashMap<>();
+		///Supporting information concepts
+		String TBTestReason = "Lab Test, Purpose of Request";
+		String TB1stTestSampleCollection = "Collection Date 1st Sample";
+		String TBSuspectNumber = "TB, TB Suspect number";
+		String TBTreatment = "TB, TB Treatment";
+		String TBRemarks = "TB, Regimen Remarks";
+		
+		supportingInfoObsMap.put("TB Suspect number", getObsFor(pat, TBSuspectNumber, "last"));
+		supportingInfoObsMap.put("TB Treatment", getObsFor(pat, TBTreatment, "last"));
+		supportingInfoObsMap.put("TB Remarks", getObsFor(pat, TBRemarks, "last"));
+		supportingInfoObsMap.put("Collection Date 1st Sample", getObsFor(pat, TB1stTestSampleCollection, "last"));
+		supportingInfoObsMap.put("TB Purpose of Request", getObsFor(pat, TBTestReason, "last"));
+		
+		return supportingInfoObsMap;
 	}
 	
 	//Collect VL supporting information
