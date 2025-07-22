@@ -13,7 +13,8 @@ import static org.apache.commons.lang3.Validate.notNull;
 
 import javax.annotation.Nonnull;
 
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -25,6 +26,12 @@ import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.StringType;
 import org.hl7.fhir.r4.model.Task;
 import org.openmrs.Concept;
+import org.openmrs.Encounter;
+import org.openmrs.Obs;
+import org.openmrs.Order;
+import org.openmrs.api.ConceptService;
+import org.openmrs.api.EncounterService;
+import org.openmrs.api.ObsService;
 import org.openmrs.module.fhir2.FhirConstants;
 import org.openmrs.module.fhir2.api.translators.ConceptTranslator;
 import org.openmrs.module.fhir2.api.translators.ReferenceTranslator;
@@ -46,6 +53,15 @@ public class TaskTranslatorImpl implements TaskTranslator {
 	@Autowired
 	private ConceptTranslator conceptTranslator;
 	
+	@Autowired
+	private ConceptService conceptService;
+	
+	@Autowired
+	private EncounterService encounterService;
+	
+	@Autowired
+	private ObsService obsService;
+	
 	@Override
 	public Task toFhirResource(@Nonnull FhirTask openmrsTask) {
 		notNull(openmrsTask, "The openmrsTask object should not be null");
@@ -53,6 +69,22 @@ public class TaskTranslatorImpl implements TaskTranslator {
 		Task fhirTask = new Task();
 		setFhirTaskFields(openmrsTask, fhirTask);
 		
+		String requisitionID = getSavedRequisition(openmrsTask);
+		if (requisitionID.isEmpty()) {
+			createLabRequisitionObs(openmrsTask, fhirTask.getGroupIdentifier().getValue());
+		} else {
+			Identifier labRequisitionIdentifier = new Identifier().setSystem("eRegisterLab Requisition Number")
+			        .setValue(requisitionID);
+			
+			Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
+			        .setValue(openmrsTask.getUuid());
+			
+			Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
+			        .setValue(labRequisitionIdentifier.getValue());
+			
+			fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
+			fhirTask.setGroupIdentifier(labRequisitionIdentifier);
+		}
 		return fhirTask;
 	}
 	
@@ -125,21 +157,59 @@ public class TaskTranslatorImpl implements TaskTranslator {
 			fhirTask.setLastModified(openmrsTask.getDateCreated());
 		}
 		
-		/* Below is the original Task ideintifier (immutable singleton) -- commented out
-		   Modified the code a bit to accomodate an additional identifier
+		/* Below is the original Task identifier (immutable singleton) -- commented out
+		   Modified the code a bit to accommodate an additional identifier
 		   to be used to link multiple serviceRequests
 		*/
-		//Reverted back to this after deciding to generate a lab bundle per order
-		fhirTask.setIdentifier(Collections.singletonList(
+		/*
+		Reverted back to this after deciding to generate a lab bundle per order
+		 fhirTask.setIdentifier(Collections.singletonList(
 		    new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER).setValue(openmrsTask.getUuid())));
+		*/
 		
-		// Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
-		//         .setValue(openmrsTask.getUuid());
-		// Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
-		//         .setValue(LabOrderNumberGenerator());
-		// fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
+		Identifier taskIdentifier = new Identifier().setSystem(FhirConstants.OPENMRS_FHIR_EXT_TASK_IDENTIFIER)
+		        .setValue(openmrsTask.getUuid());
+		
+		Identifier labRequisitionIdentifier = new Identifier().setSystem("eRegisterLab Requisition Number")
+		        .setValue(LabOrderNumberGenerator());
+		
+		Identifier labOrderIdentifier = new Identifier().setSystem("eRegister Lab Order Number")
+		        .setValue(labRequisitionIdentifier.getValue());
+		
+		fhirTask.setGroupIdentifier(labRequisitionIdentifier);
+		
+		// fhirTask.setIdentifier(Collections.singletonList(taskIdentifier));
+		
+		fhirTask.setIdentifier(Arrays.asList(taskIdentifier, labOrderIdentifier));
 		
 		fhirTask.getMeta().setLastUpdated(openmrsTask.getDateChanged());
+	}
+	
+	//Create requisition number as an observation
+	private void createLabRequisitionObs(FhirTask openmrsTask, String eRegisterLabRequisitionNum) {
+		String[] encounterRefArray = openmrsTask.getEncounterReference().getReference().split("/");
+		if (encounterRefArray.length > 0 && Arrays.stream(encounterRefArray).findFirst().get().equals("Encounter")) {
+			// Get openmrs encounter
+			String encounterUuid = encounterRefArray[encounterRefArray.length - 1];
+			Encounter encounter = encounterService.getEncounterByUuid(encounterUuid);
+			// Persist the requisition number to the obs table.
+			// Reference one of the orders that are part of the requisition
+			if ((encounter != null) && !encounter.getOrders().isEmpty()) {
+				Order order = null;
+				if (encounter.getOrders().stream().findFirst().isPresent()) {
+					order = encounter.getOrders().stream().findFirst().get();
+					
+					//we'll get to this point if the lab requisition num is not yet persisted
+					Concept labRequisitionConcept = conceptService.getConceptByName("eRegisterLab Requisition Number");
+					Obs newLabRequistionObs = new Obs(order.getPatient(), labRequisitionConcept, order.getDateCreated(),
+					        order.getEncounter().getLocation());
+					newLabRequistionObs.setEncounter(order.getEncounter());
+					newLabRequistionObs.setOrder(order);
+					newLabRequistionObs.setValueText(eRegisterLabRequisitionNum);
+					obsService.saveObs(newLabRequistionObs, null);
+				}
+			}
+		}
 	}
 	
 	private void setOpenmrsTaskFields(FhirTask openmrsTask, Task fhirTask) {
@@ -254,5 +324,33 @@ public class TaskTranslatorImpl implements TaskTranslator {
 		System.out.println(labOrderNumber);
 		
 		return labOrderNumber;
+	}
+	
+	private String getSavedRequisition(FhirTask openmrsTask) {
+		String[] encounterRefArray = openmrsTask.getEncounterReference().getReference().split("/");
+		String requisitionNumber = "";
+		if (encounterRefArray.length > 0 && Arrays.stream(encounterRefArray).findFirst().get().equals("Encounter")) {
+			// Get openmrs encounter
+			String encounterUuid = encounterRefArray[encounterRefArray.length - 1];
+			Encounter encounter = encounterService.getEncounterByUuid(encounterUuid);
+			
+			Order order = null;
+			if (encounter.getOrders().stream().findFirst().isPresent()) {
+				order = encounter.getOrders().stream().findFirst().get();
+				//check if requisition num is already persisted
+				Concept labRequisitionConcept = conceptService.getConceptByName("eRegisterLab Requisition Number");
+				List<Obs> existingLabRequisitions = obsService.getObservationsByPersonAndConcept(order.getPatient(),
+				    labRequisitionConcept);
+				
+				if (!existingLabRequisitions.isEmpty()) {
+					for (Obs observation : existingLabRequisitions) {
+						if (observation.getEncounter().getUuid().equals(encounterUuid)) {
+							requisitionNumber = observation.getValueText();
+						}
+					}
+				}
+			}
+		}
+		return requisitionNumber;
 	}
 }
