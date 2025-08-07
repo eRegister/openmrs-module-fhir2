@@ -195,6 +195,19 @@ public class TaskTranslatorImpl implements TaskTranslator {
 			// Persist the requisition number to the obs table.
 			// Reference one of the orders that are part of the requisition
 			if ((encounter != null) && !encounter.getOrders().isEmpty()) {
+				encounter.getOrders().forEach(order -> {
+					// order = encounter.getOrders().stream().findFirst().get();
+					
+					//we'll get to this point if the lab requisition num is not yet persisted
+					Concept labRequisitionConcept = conceptService.getConceptByName("eRegisterLab Requisition Number");
+					Obs newLabRequistionObs = new Obs(order.getPatient(), labRequisitionConcept, order.getDateCreated(),
+					        order.getEncounter().getLocation());
+					newLabRequistionObs.setEncounter(order.getEncounter());
+					newLabRequistionObs.setOrder(order);
+					newLabRequistionObs.setValueText(eRegisterLabRequisitionNum);
+					obsService.saveObs(newLabRequistionObs, null);
+				});
+				/*
 				Order order = null;
 				if (encounter.getOrders().stream().findFirst().isPresent()) {
 					order = encounter.getOrders().stream().findFirst().get();
@@ -207,7 +220,7 @@ public class TaskTranslatorImpl implements TaskTranslator {
 					newLabRequistionObs.setOrder(order);
 					newLabRequistionObs.setValueText(eRegisterLabRequisitionNum);
 					obsService.saveObs(newLabRequistionObs, null);
-				}
+				}*/
 			}
 		}
 	}
